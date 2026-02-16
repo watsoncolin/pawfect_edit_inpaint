@@ -1,8 +1,7 @@
 import logging
 
 import torch
-from diffusers import FluxFillPipeline
-from optimum.quanto import qfloat8, quantize
+from diffusers import FluxFillPipeline, FluxTransformer2DModel, GGUFQuantizationConfig
 from PIL import Image
 
 logger = logging.getLogger(__name__)
@@ -13,23 +12,31 @@ PROMPT = "seamless natural background matching surrounding area, photorealistic,
 NUM_STEPS = 28
 GUIDANCE_SCALE = 30
 
+GGUF_URL = "https://huggingface.co/YarvixPA/FLUX.1-Fill-dev-GGUF/blob/main/flux1-fill-dev-Q8_0.gguf"
+
 
 def load_model():
-    """Load and quantize FLUX.1-Fill-dev pipeline."""
+    """Load FLUX.1-Fill-dev pipeline with Q8 GGUF quantized transformer."""
     global _pipe
-    logger.info("Loading FLUX.1-Fill-dev pipeline...")
-    _pipe = FluxFillPipeline.from_pretrained(
-        "black-forest-labs/FLUX.1-Fill-dev",
+
+    logger.info("Loading GGUF Q8 transformer...")
+    transformer = FluxTransformer2DModel.from_single_file(
+        GGUF_URL,
+        quantization_config=GGUFQuantizationConfig(compute_dtype=torch.bfloat16),
         torch_dtype=torch.bfloat16,
     )
 
-    logger.info("Quantizing transformer to float8...")
-    quantize(_pipe.transformer, weights=qfloat8)
+    logger.info("Loading FLUX.1-Fill-dev pipeline with GGUF transformer...")
+    _pipe = FluxFillPipeline.from_pretrained(
+        "black-forest-labs/FLUX.1-Fill-dev",
+        transformer=transformer,
+        torch_dtype=torch.bfloat16,
+    )
 
     logger.info("Enabling model CPU offload...")
     _pipe.enable_model_cpu_offload()
 
-    logger.info("FLUX.1-Fill-dev ready")
+    logger.info("FLUX.1-Fill-dev (Q8 GGUF) ready")
 
 
 def is_ready() -> bool:

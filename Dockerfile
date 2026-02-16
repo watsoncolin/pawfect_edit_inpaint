@@ -25,12 +25,15 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 COPY pyproject.toml uv.lock* ./
 RUN uv sync --no-dev --no-install-project
 
-# Bake FLUX.1-Fill-dev weights at build time (requires HF_TOKEN build arg for gated model)
+# Bake model weights at build time (requires HF_TOKEN build arg for gated model)
 ARG HF_TOKEN
 ENV HF_TOKEN=${HF_TOKEN}
+# Download GGUF Q8 transformer (~12.7GB) + pipeline components (tokenizer, scheduler, etc.)
 RUN uv run python -c "\
+from huggingface_hub import hf_hub_download; \
+hf_hub_download('YarvixPA/FLUX.1-Fill-dev-GGUF', filename='flux1-fill-dev-Q8_0.gguf'); \
 from diffusers import FluxFillPipeline; \
-FluxFillPipeline.from_pretrained('black-forest-labs/FLUX.1-Fill-dev')"
+FluxFillPipeline.from_pretrained('black-forest-labs/FLUX.1-Fill-dev', transformer=None)"
 # Clear token from image
 ENV HF_TOKEN=
 
