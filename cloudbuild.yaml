@@ -45,6 +45,8 @@ substitutions:
   _IMAGE_NAME: 'gcr.io/pawfect-edit/pawfect-edit-inpaint'
   _REGION: 'us-east4'
 
+timeout: 3600s
+
 options:
   logging: CLOUD_LOGGING_ONLY
-  machineType: 'E2_HIGHCPU_8'
+  machineType: 'E2_HIGHCPU_32'
