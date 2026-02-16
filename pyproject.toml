@@ -1,0 +1,47 @@
+[project]
+name = "pawfect-edit-inpaint"
+version = "0.1.0"
+description = "Pawfect Edit FLUX.1-Fill-dev inpainting service"
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "torch>=2.1.0",
+    "diffusers>=0.31.0",
+    "transformers>=4.47.0",
+    "optimum-quanto>=0.2.0",
+    "sentencepiece>=0.2.0",
+    "protobuf>=5.0.0",
+    "fastapi>=0.110.0",
+    "uvicorn[standard]",
+    "python-multipart",
+    "firebase-admin>=6.6.0",
+    "Pillow>=10.0.0",
+    "numpy>=1.26.0",
+    "hf-transfer>=0.1.6",
+    "accelerate>=0.26.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "black>=24.10.0",
+    "ruff>=0.8.0",
+]
+
+[tool.uv]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu124" }
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[tool.black]
+line-length = 100
+target-version = ['py310']
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
