@@ -3,6 +3,7 @@ import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
 from app.services.flux_inpaint import is_ready, load_model
 
@@ -39,7 +40,7 @@ async def health():
 async def ready():
     """Readiness probe — returns OK only when model is loaded."""
     if not is_ready():
-        return {"status": "loading"}, 503
+        return JSONResponse(content={"status": "loading"}, status_code=503)
     return {"status": "ready"}
 
 
