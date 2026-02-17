@@ -1,4 +1,5 @@
 import logging
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -9,11 +10,19 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 
+def _load_model_background():
+    try:
+        load_model()
+        logger.info("FLUX.1-Fill-dev model loaded and ready")
+    except Exception:
+        logger.exception("Failed to load FLUX.1-Fill-dev model")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Loading FLUX.1-Fill-dev model...")
-    load_model()
-    logger.info("FLUX.1-Fill-dev model loaded and ready")
+    logger.info("Starting FLUX.1-Fill-dev model loading in background...")
+    thread = threading.Thread(target=_load_model_background, daemon=True)
+    thread.start()
     yield
 
 

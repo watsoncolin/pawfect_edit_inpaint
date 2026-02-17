@@ -33,7 +33,7 @@ steps:
       - '--concurrency=1'
       - '--timeout=300'
       - '--set-secrets=FIREBASE_CREDENTIALS=FIREBASE_CREDENTIALS:latest,HF_TOKEN=HF_TOKEN:latest'
-      - '--startup-probe=httpGet.path=/health,initialDelaySeconds=30,periodSeconds=10,failureThreshold=24,timeoutSeconds=5'
+      - '--startup-probe=httpGet.path=/ready,initialDelaySeconds=10,periodSeconds=10,failureThreshold=60,timeoutSeconds=5'
       - '--liveness-probe=httpGet.path=/health'
 
 availableSecrets:
