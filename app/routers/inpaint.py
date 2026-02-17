@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 import logging
@@ -29,7 +30,8 @@ async def handle_inpaint(request: Request):
         session_id = payload["sessionId"]
         logger.info(f"Received inpaint job: userId={user_id}, sessionId={session_id}")
 
-        run_inpaint(user_id, session_id)
+        # Run in thread pool so the event loop stays responsive for health probes
+        await asyncio.to_thread(run_inpaint, user_id, session_id)
 
         return Response(status_code=200)
     except KeyError as e:
