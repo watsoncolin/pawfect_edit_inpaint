@@ -33,8 +33,8 @@ def load_model():
         torch_dtype=torch.bfloat16,
     )
 
-    logger.info("Enabling sequential CPU offload...")
-    _pipe.enable_sequential_cpu_offload()
+    logger.info("Enabling model CPU offload...")
+    _pipe.enable_model_cpu_offload()
 
     logger.info("FLUX.1-Fill-dev (Q4 GGUF) ready")
 
