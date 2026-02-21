@@ -1,6 +1,8 @@
 import logging
 import time
 
+from PIL import Image
+
 from app.services import firebase
 from app.services.flux_inpaint import inpaint
 from app.utils.image import create_preview, decode_image, decode_mask, encode_jpeg, resize_for_flux
@@ -43,9 +45,15 @@ def run_inpaint(user_id: str, session_id: str):
         elapsed = time.time() - start
         logger.info(f"Inference completed in {elapsed:.1f}s")
 
-        # Resize back to original dimensions
+        # Resize result back to original dimensions
         if result.size != original_size:
-            result = result.resize(original_size, resample=1)  # LANCZOS
+            result = result.resize(original_size, Image.LANCZOS)
+
+        # Composite: only use FLUX output in the masked area, keep original pixels elsewhere.
+        # This prevents color shifts in unmasked regions.
+        if mask.size != original_size:
+            mask = mask.resize(original_size, Image.LANCZOS)
+        result = Image.composite(result, image, mask.convert("L"))
 
         # Encode and upload
         edited_bytes = encode_jpeg(result, quality=95)

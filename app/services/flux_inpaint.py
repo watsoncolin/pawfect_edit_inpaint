@@ -8,18 +8,18 @@ logger = logging.getLogger(__name__)
 
 _pipe = None
 
-PROMPT = "seamless natural background matching surrounding area, photorealistic, no leash, no rope, no cord"
+PROMPT = "empty ground, nothing here, just the natural ground surface continuing seamlessly"
 NUM_STEPS = 28
-GUIDANCE_SCALE = 30
+GUIDANCE_SCALE = 10
 
-GGUF_URL = "https://huggingface.co/YarvixPA/FLUX.1-Fill-dev-GGUF/blob/main/flux1-fill-dev-Q8_0.gguf"
+GGUF_URL = "https://huggingface.co/YarvixPA/FLUX.1-Fill-dev-GGUF/blob/main/flux1-fill-dev-Q4_0.gguf"
 
 
 def load_model():
-    """Load FLUX.1-Fill-dev pipeline with Q8 GGUF quantized transformer."""
+    """Load FLUX.1-Fill-dev pipeline with Q4 GGUF quantized transformer."""
     global _pipe
 
-    logger.info("Loading GGUF Q8 transformer...")
+    logger.info("Loading GGUF Q4 transformer...")
     transformer = FluxTransformer2DModel.from_single_file(
         GGUF_URL,
         quantization_config=GGUFQuantizationConfig(compute_dtype=torch.bfloat16),
@@ -33,10 +33,10 @@ def load_model():
         torch_dtype=torch.bfloat16,
     )
 
-    logger.info("Enabling model CPU offload...")
-    _pipe.enable_model_cpu_offload()
+    logger.info("Enabling sequential CPU offload...")
+    _pipe.enable_sequential_cpu_offload()
 
-    logger.info("FLUX.1-Fill-dev (Q8 GGUF) ready")
+    logger.info("FLUX.1-Fill-dev (Q4 GGUF) ready")
 
 
 def is_ready() -> bool:
