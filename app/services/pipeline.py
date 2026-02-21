@@ -17,6 +17,10 @@ def run_inpaint(user_id: str, session_id: str):
     logger.info(f"Starting inpaint: userId={user_id}, sessionId={session_id}")
     base_path = f"users/{user_id}/sessions/{session_id}"
 
+    if not firebase.session_exists(user_id, session_id):
+        logger.warning(f"Session {session_id} no longer exists, skipping inpaint")
+        return
+
     try:
         # Mark as processing
         firebase.update_session(user_id, session_id, {"processingStatus": "processing"})

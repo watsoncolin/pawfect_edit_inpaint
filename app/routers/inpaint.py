@@ -4,6 +4,7 @@ import json
 import logging
 
 from fastapi import APIRouter, Request, Response
+from google.api_core.exceptions import NotFound
 
 from app.services.flux_inpaint import is_ready
 from app.services.pipeline import run_inpaint
@@ -37,6 +38,9 @@ async def handle_inpaint(request: Request):
     except KeyError as e:
         logger.error(f"Missing required field in message: {e}")
         # Ack to prevent retries on bad messages
+        return Response(status_code=200)
+    except NotFound:
+        logger.warning(f"Session deleted, acking message: userId={user_id}, sessionId={session_id}")
         return Response(status_code=200)
     except Exception as e:
         logger.exception(f"Transient error processing inpaint: {e}")

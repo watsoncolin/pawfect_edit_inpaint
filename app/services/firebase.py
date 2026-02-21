@@ -51,6 +51,13 @@ def upload_blob(path: str, data: bytes, content_type: str):
     return blob.name
 
 
+def session_exists(user_id: str, session_id: str) -> bool:
+    """Check if a session document exists in Firestore."""
+    db = get_firestore_client()
+    doc_ref = db.collection("users").document(user_id).collection("sessions").document(session_id)
+    return doc_ref.get().exists
+
+
 def update_session(user_id: str, session_id: str, updates: dict):
     """Update Firestore session document."""
     db = get_firestore_client()
