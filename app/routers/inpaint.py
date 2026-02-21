@@ -43,6 +43,9 @@ async def handle_inpaint(request: Request):
         logger.warning(f"Session deleted, acking message: userId={user_id}, sessionId={session_id}")
         return Response(status_code=200)
     except Exception as e:
-        logger.exception(f"Transient error processing inpaint: {e}")
-        # Nack so Pub/Sub retries
+        delivery_attempt = envelope.get("deliveryAttempt", 1)
+        if delivery_attempt >= 5:
+            logger.error(f"Max retries reached (attempt {delivery_attempt}), acking: {e}")
+            return Response(status_code=200)
+        logger.exception(f"Transient error processing inpaint (attempt {delivery_attempt}): {e}")
         return Response(status_code=500)
