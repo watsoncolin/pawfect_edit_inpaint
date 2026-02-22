@@ -33,14 +33,25 @@ GUIDANCE_SCALE_GRID = [2, 4, 10, 20, 30]
 HF_REPO = "YarvixPA/FLUX.1-Fill-dev-GGUF"
 
 
+def _remove_offload_hooks(pipe):
+    """Remove existing CPU offload hooks so they can be re-attached."""
+    from accelerate.hooks import remove_hook_from_module
+    for component_name in pipe.config:
+        component = getattr(pipe, component_name, None)
+        if isinstance(component, torch.nn.Module):
+            remove_hook_from_module(component, recurse=True)
+
+
 def _swap_transformer(pipe, gguf_filename: str):
     """Load a new GGUF transformer and swap it into the existing pipeline.
 
     Frees the old transformer first to keep peak memory low.
     """
-    # Free old transformer
+    # Remove offload hooks before modifying pipeline
+    _remove_offload_hooks(pipe)
+
+    # Free old transformer (skip .to() — may be on meta device from offload)
     if pipe.transformer is not None:
-        pipe.transformer.to("cpu")
         del pipe.transformer
         gc.collect()
         torch.cuda.empty_cache()
