@@ -9,10 +9,10 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Baseline & Validation
 
-- [ ] **BASE-01**: Establish baseline metrics — run current pipeline on reference session (D1A406F5) and record inference time, output quality
-- [ ] **BASE-02**: Compare Q4_0 vs Q5_K_S vs Q8_0 quantization on reference session for quality and speed
-- [ ] **BASE-03**: Run guidance scale calibration grid (test values 2, 4, 10, 20, 30) on reference session
-- [ ] **BASE-04**: Verify torch.compile viability on L4 (sm_89) — confirm compilation actually runs, not silent fallback
+- [x] **BASE-01**: Establish baseline metrics — run current pipeline on reference session (D1A406F5) and record inference time, output quality
+- [x] **BASE-02**: Compare Q4_0 vs Q5_K_S vs Q8_0 quantization on reference session for quality and speed
+- [x] **BASE-03**: Run guidance scale calibration grid (test values 2, 4, 10, 20, 30) on reference session
+- [x] **BASE-04**: Verify torch.compile viability on L4 (sm_89) — confirm compilation actually runs, not silent fallback
 
 ### Inference Optimization
 
@@ -78,10 +78,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BASE-01 | Phase 0 | Pending |
-| BASE-02 | Phase 0 | Pending |
-| BASE-03 | Phase 0 | Pending |
-| BASE-04 | Phase 0 | Pending |
+| BASE-01 | Phase 0 | Complete |
+| BASE-02 | Phase 0 | Complete |
+| BASE-03 | Phase 0 | Complete |
+| BASE-04 | Phase 0 | Complete |
 | INFER-01 | Phase 1 | Pending |
 | INFER-02 | Phase 1 | Pending |
 | INFER-03 | Phase 1 | Pending |
