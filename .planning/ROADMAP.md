@@ -29,7 +29,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. A guidance scale calibration grid has been run and the optimal value for background fill mode on FLUX.1-Fill-dev is identified and documented
   3. torch.compile viability on T4 (sm_75) is confirmed or rejected via `torch._dynamo.explain()` — not assumed
   4. A written audit report exists with specific numeric targets for steps, guidance scale, and quantization tier that Phase 1 will use
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 00-01-PLAN.md — Implement audit endpoint, parameter matrix runner, Firebase signed URL helper
+- [ ] 00-02-PLAN.md — Update Cloud Run timeout + human: deploy, run audit, review report, record approved settings
 
 ### Phase 1: Parameters + Mask Preprocessing
 **Goal**: Measurably reduce inference time and eliminate mask speck artifacts using parameter changes and mask cleanup — no new external dependencies
@@ -83,7 +87,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 0. Baseline Audit | 0/TBD | Not started | - |
+| 0. Baseline Audit | 0/2 | Not started | - |
 | 1. Parameters + Mask Preprocessing | 0/TBD | Not started | - |
 | 2. SAM3 Scene Labeling Integration | 0/TBD | Not started | - |
 | 3. Context-Aware Prompt Pipeline | 0/TBD | Not started | - |
