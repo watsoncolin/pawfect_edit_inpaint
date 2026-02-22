@@ -5,10 +5,15 @@ IMAGE="gcr.io/pawfect-edit/pawfect-edit-inpaint"
 REGION="us-east4"
 SERVICE="pawfect-edit-inpaint"
 
-# Resolve HF_TOKEN
+# Resolve HF_TOKEN: .env.local > environment > ~/.cache/huggingface/token
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ENV_FILE="$SCRIPT_DIR/../.env.local"
+if [ -f "$ENV_FILE" ]; then
+  HF_TOKEN="${HF_TOKEN:-$(grep '^HF_TOKEN=' "$ENV_FILE" | cut -d= -f2-)}"
+fi
 HF_TOKEN="${HF_TOKEN:-$(cat ~/.cache/huggingface/token 2>/dev/null || true)}"
 if [ -z "$HF_TOKEN" ]; then
-  echo "Error: HF_TOKEN not set and ~/.cache/huggingface/token not found"
+  echo "Error: HF_TOKEN not found in .env.local, environment, or ~/.cache/huggingface/token"
   exit 1
 fi
 
