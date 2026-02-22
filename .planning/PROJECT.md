@@ -2,7 +2,7 @@
 
 ## What This Is
 
-The inpainting service for Pawfect Edit, a pet photography app. It removes distracting objects (leash handles, hands, toys, clutter) from pet photos so the pet is the star. The service receives jobs via Pub/Sub, runs FLUX.1-Fill-dev inference on a T4 GPU, and uploads results to Firebase Storage. This project improves both inference speed (currently 60-120s, target <30s) and output quality (model hallucinates wrong objects instead of filling with matching background).
+The inpainting service for Pawfect Edit, a pet photography app. It removes distracting objects (leash handles, hands, toys, clutter) from pet photos so the pet is the star. The service receives jobs via Pub/Sub, runs FLUX.1-Fill-dev inference on an L4 GPU, and uploads results to Firebase Storage. This project improves both inference speed (currently 60-120s, target <30s) and output quality (model hallucinates wrong objects instead of filling with matching background).
 
 ## Core Value
 
@@ -21,23 +21,23 @@ Inpainted areas must seamlessly match the surrounding background — users shoul
 - ✓ Graceful handling of deleted sessions — existing
 - ✓ Max retry limit (5 attempts) for transient errors — existing
 - ✓ Health and readiness probes — existing
-- ✓ Model CPU offload for T4 memory constraints — existing
+- ✓ Model CPU offload for memory management — existing
 
 ### Active
 
-- [ ] Reduce end-to-end inpaint time from 60-120s to under 30s on T4 GPU
+- [ ] Reduce end-to-end inpaint time from 60-120s to under 30s on L4 GPU
 - [ ] Eliminate hallucinated objects in inpainted areas (wrong content generation)
 - [ ] Context-aware prompting — dynamically describe the background surface to guide inpainting
 - [ ] Integrate SAM3 scene labeling to provide background context before inpainting
 - [ ] API server triggers SAM3 labeling in parallel with Pub/Sub enqueue
 - [ ] Inpaint service checks for scene labels, requeues if not yet available
-- [ ] Evaluate alternative inpainting models that may offer better speed/quality on T4
+- [ ] Evaluate alternative inpainting models that may offer better speed/quality on L4
 - [ ] Optimize inference parameters (steps, guidance scale) for background fill use case
 - [ ] Clean up mask artifacts (scattered white specks) before inference
 
 ### Out of Scope
 
-- GPU upgrade (T4 is the budget constraint) — optimize within T4
+- GPU upgrade beyond L4 — optimize within current L4
 - Real-time/streaming inpainting — async batch processing is fine
 - On-device inpainting improvements (small areas handled on iOS) — this project is server-side only
 - SAM2 on-device mask generation changes — mask creation stays on device
@@ -58,14 +58,14 @@ Photo of dog on patchy grass with fallen leaves. Mask covers hand holding retrac
 Already exists as separate service for automatic leash detection. Currently returns binary masks only. Needs to be extended to also return scene/surface labels that the inpaint service can use for prompt construction.
 
 **Infrastructure:**
-- GPU: NVIDIA T4 (16GB VRAM) on Cloud Run
+- GPU: NVIDIA L4 (24GB VRAM, sm_89) on Cloud Run
 - Model: FLUX.1-Fill-dev with Q4 GGUF quantized transformer
 - Current params: 28 inference steps, guidance_scale=10
 - Model loading: baked into Docker image at build time
 
 ## Constraints
 
-- **GPU**: T4 16GB VRAM — cannot upgrade, must optimize within this budget
+- **GPU**: L4 24GB VRAM (sm_89) — optimize within current hardware
 - **Latency target**: End-to-end under 30 seconds (from current 60-120s)
 - **Architecture**: Must remain async Pub/Sub worker pattern
 - **SAM3 dependency**: Scene labeling is async — inpaint service must handle labels not being ready yet
@@ -76,10 +76,10 @@ Already exists as separate service for automatic leash detection. Currently retu
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
 | Use SAM3 for scene labeling | Already in infrastructure for leash detection, can extend | — Pending |
-| Open to alternative inpainting models | Speed/quality tradeoff on T4 may favor smaller models | — Pending |
+| Open to alternative inpainting models | Speed/quality tradeoff on L4 may favor smaller models | — Pending |
 | Context-aware prompting over generic prompt | Current "empty ground" causes hallucinations | — Pending |
 | Async label checking with requeue | Avoids blocking inpaint on SAM3 latency | — Pending |
 | Accept 2-3s for scene classification | Better results justify small delay if total stays <30s | — Pending |
 
 ---
-*Last updated: 2026-02-21 after initialization*
+*Last updated: 2026-02-21 after Phase 0 research corrected GPU identity (L4, not T4)*

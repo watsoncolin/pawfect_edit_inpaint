@@ -10,17 +10,17 @@ Requirements for this milestone. Each maps to roadmap phases.
 ### Baseline & Validation
 
 - [ ] **BASE-01**: Establish baseline metrics — run current pipeline on reference session (D1A406F5) and record inference time, output quality
-- [ ] **BASE-02**: Compare Q4_0 vs Q5_K_M vs Q8_0 quantization on reference session for quality and speed
+- [ ] **BASE-02**: Compare Q4_0 vs Q5_K_S vs Q8_0 quantization on reference session for quality and speed
 - [ ] **BASE-03**: Run guidance scale calibration grid (test values 2, 4, 10, 20, 30) on reference session
-- [ ] **BASE-04**: Verify torch.compile viability on T4 (sm_75) — confirm compilation actually runs, not silent fallback
+- [ ] **BASE-04**: Verify torch.compile viability on L4 (sm_89) — confirm compilation actually runs, not silent fallback
 
 ### Inference Optimization
 
 - [ ] **INFER-01**: Reduce inference steps from 28 to optimal value (target ~20) validated by baseline testing
 - [ ] **INFER-02**: Set guidance scale to empirically-determined optimal value for background fill
-- [ ] **INFER-03**: Upgrade quantization from Q4_0 to best-performing variant (Q5_K_M or Q8_0) based on baseline results
+- [ ] **INFER-03**: Upgrade quantization from Q4_0 to best-performing variant (Q5_K_S or Q8_0) based on baseline results
 - [ ] **INFER-04**: Apply torch.compile regional compilation to DiT transformer blocks (if BASE-04 confirms viability)
-- [ ] **INFER-05**: End-to-end inference time under 30 seconds on T4
+- [ ] **INFER-05**: End-to-end inference time under 30 seconds on L4
 
 ### Mask Preprocessing
 
@@ -65,12 +65,12 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 | Feature | Reason |
 |---------|--------|
-| GPU upgrade (L4/A100) | T4 is the budget constraint |
+| GPU upgrade beyond L4 | Optimize within current L4 hardware |
 | Model replacement (SD 1.5, SDXL) | FLUX Fill quality is superior for background fill; optimize within FLUX |
 | Real-time/streaming inpainting | Async batch processing is sufficient |
 | On-device inpainting changes | Small areas handled on iOS; this is server-side only |
 | SAM2 mask generation changes | Mask creation stays on device |
-| FP8 quantization | Requires sm_89+, T4 is sm_75 |
+| FP8 quantization | Now viable on L4 (sm_89) — evaluate in future if needed |
 
 ## Traceability
 
