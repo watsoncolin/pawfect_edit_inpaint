@@ -78,32 +78,32 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BASE-01 | Phase ? | Pending |
-| BASE-02 | Phase ? | Pending |
-| BASE-03 | Phase ? | Pending |
-| BASE-04 | Phase ? | Pending |
-| INFER-01 | Phase ? | Pending |
-| INFER-02 | Phase ? | Pending |
-| INFER-03 | Phase ? | Pending |
-| INFER-04 | Phase ? | Pending |
-| INFER-05 | Phase ? | Pending |
-| MASK-01 | Phase ? | Pending |
-| MASK-02 | Phase ? | Pending |
-| QUAL-01 | Phase ? | Pending |
-| QUAL-02 | Phase ? | Pending |
-| QUAL-03 | Phase ? | Pending |
-| QUAL-04 | Phase ? | Pending |
-| SAM3-01 | Phase ? | Pending |
-| SAM3-02 | Phase ? | Pending |
-| SAM3-03 | Phase ? | Pending |
-| SAM3-04 | Phase ? | Pending |
-| SAM3-05 | Phase ? | Pending |
+| BASE-01 | Phase 0 | Pending |
+| BASE-02 | Phase 0 | Pending |
+| BASE-03 | Phase 0 | Pending |
+| BASE-04 | Phase 0 | Pending |
+| INFER-01 | Phase 1 | Pending |
+| INFER-02 | Phase 1 | Pending |
+| INFER-03 | Phase 1 | Pending |
+| INFER-04 | Phase 4 | Pending |
+| INFER-05 | Phase 4 | Pending |
+| MASK-01 | Phase 1 | Pending |
+| MASK-02 | Phase 1 | Pending |
+| QUAL-01 | Phase 3 | Pending |
+| QUAL-02 | Phase 3 | Pending |
+| QUAL-03 | Phase 3 | Pending |
+| QUAL-04 | Phase 3 | Pending |
+| SAM3-01 | Phase 2 | Pending |
+| SAM3-02 | Phase 2 | Pending |
+| SAM3-03 | Phase 2 | Pending |
+| SAM3-04 | Phase 2 | Pending |
+| SAM3-05 | Phase 2 | Pending |
 
 **Coverage:**
 - v1 requirements: 20 total
-- Mapped to phases: 0
-- Unmapped: 20 ⚠️
+- Mapped to phases: 20
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-21*
-*Last updated: 2026-02-21 after initial definition*
+*Last updated: 2026-02-21 — traceability filled after roadmap creation*
