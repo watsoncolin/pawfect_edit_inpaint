@@ -11,6 +11,7 @@ from diffusers import FluxFillPipeline, FluxTransformer2DModel, GGUFQuantization
 from huggingface_hub import hf_hub_download
 
 from app.services import firebase
+from app.services.flux_inpaint import unload_model, load_model as reload_startup_model
 from app.utils.image import decode_image, decode_mask, resize_for_flux
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,11 @@ def run_audit(user_id: str, session_id: str, run_id: str) -> dict[str, Any]:
     All outputs uploaded to Firebase Storage under audit/{run_id}/.
     Returns a dict with run_id, gpu info, results list, compile viability, and report URL.
     """
+    # -------------------------------------------------------------------------
+    # 0. Unload startup pipeline to free VRAM for audit
+    # -------------------------------------------------------------------------
+    unload_model()
+
     # -------------------------------------------------------------------------
     # 1. Confirm GPU identity
     # -------------------------------------------------------------------------
@@ -250,7 +256,12 @@ def run_audit(user_id: str, session_id: str, run_id: str) -> dict[str, Any]:
     logger.info(f"Audit report uploaded: {report_path}")
 
     # -------------------------------------------------------------------------
-    # 6. Return result dict
+    # 6. Reload startup pipeline so normal inpainting works again
+    # -------------------------------------------------------------------------
+    reload_startup_model()
+
+    # -------------------------------------------------------------------------
+    # 7. Return result dict
     # -------------------------------------------------------------------------
     return {
         "run_id": run_id,

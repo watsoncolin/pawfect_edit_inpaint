@@ -1,3 +1,4 @@
+import gc
 import logging
 
 import torch
@@ -37,6 +38,17 @@ def load_model():
     _pipe.enable_model_cpu_offload()
 
     logger.info("FLUX.1-Fill-dev (Q4 GGUF) ready")
+
+
+def unload_model():
+    """Unload the pipeline to free VRAM for audit."""
+    global _pipe
+    if _pipe is not None:
+        del _pipe
+        _pipe = None
+        gc.collect()
+        torch.cuda.empty_cache()
+        logger.info("FLUX pipeline unloaded, VRAM freed")
 
 
 def is_ready() -> bool:
