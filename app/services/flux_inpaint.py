@@ -40,6 +40,11 @@ def load_model():
     logger.info("FLUX.1-Fill-dev (Q4 GGUF) ready")
 
 
+def get_pipeline() -> FluxFillPipeline | None:
+    """Return the loaded pipeline for direct component reuse."""
+    return _pipe
+
+
 def unload_model():
     """Unload the pipeline to free VRAM for audit."""
     global _pipe

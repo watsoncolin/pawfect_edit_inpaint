@@ -7,11 +7,11 @@ from typing import Any
 
 import torch
 import torch._dynamo as dynamo
-from diffusers import FluxFillPipeline, FluxTransformer2DModel, GGUFQuantizationConfig
+from diffusers import FluxTransformer2DModel, GGUFQuantizationConfig
 from huggingface_hub import hf_hub_download
 
 from app.services import firebase
-from app.services.flux_inpaint import unload_model, load_model as reload_startup_model
+from app.services.flux_inpaint import get_pipeline, load_model as reload_startup_model
 from app.utils.image import decode_image, decode_mask, resize_for_flux
 
 logger = logging.getLogger(__name__)
@@ -31,7 +31,28 @@ QUANT_VARIANTS = [
 GUIDANCE_SCALE_GRID = [2, 4, 10, 20, 30]
 
 HF_REPO = "YarvixPA/FLUX.1-Fill-dev-GGUF"
-PIPELINE_PRETRAINED = "black-forest-labs/FLUX.1-Fill-dev"
+
+
+def _swap_transformer(pipe, gguf_filename: str):
+    """Load a new GGUF transformer and swap it into the existing pipeline.
+
+    Frees the old transformer first to keep peak memory low.
+    """
+    # Free old transformer
+    if pipe.transformer is not None:
+        pipe.transformer.to("cpu")
+        del pipe.transformer
+        gc.collect()
+        torch.cuda.empty_cache()
+
+    local_gguf = hf_hub_download(repo_id=HF_REPO, filename=gguf_filename)
+    transformer = FluxTransformer2DModel.from_single_file(
+        local_gguf,
+        quantization_config=GGUFQuantizationConfig(compute_dtype=torch.bfloat16),
+        torch_dtype=torch.bfloat16,
+    )
+    pipe.transformer = transformer
+    return pipe
 
 
 def run_audit(user_id: str, session_id: str, run_id: str) -> dict[str, Any]:
@@ -42,14 +63,12 @@ def run_audit(user_id: str, session_id: str, run_id: str) -> dict[str, Any]:
     Inner loop: 5 guidance scale values (2, 4, 10, 20, 30)
     Total: 15 inferences + 1 torch.compile viability check.
 
+    Reuses the startup pipeline's shared components (text encoders, VAE, scheduler)
+    and only swaps the transformer for each quant variant to stay within memory limits.
+
     All outputs uploaded to Firebase Storage under audit/{run_id}/.
     Returns a dict with run_id, gpu info, results list, compile viability, and report URL.
     """
-    # -------------------------------------------------------------------------
-    # 0. Unload startup pipeline to free VRAM for audit
-    # -------------------------------------------------------------------------
-    unload_model()
-
     # -------------------------------------------------------------------------
     # 1. Confirm GPU identity
     # -------------------------------------------------------------------------
@@ -64,7 +83,15 @@ def run_audit(user_id: str, session_id: str, run_id: str) -> dict[str, Any]:
     logger.info(f"GPU: {gpu_name}, compute capability: {sm}, VRAM: {total_vram_gb:.1f} GB")
 
     # -------------------------------------------------------------------------
-    # 2. Download session assets from Firebase Storage
+    # 2. Get the existing pipeline (reuse text encoders, VAE, scheduler)
+    # -------------------------------------------------------------------------
+    pipe = get_pipeline()
+    if pipe is None:
+        raise RuntimeError("Startup pipeline not loaded — cannot run audit")
+    logger.info("Reusing startup pipeline components for audit")
+
+    # -------------------------------------------------------------------------
+    # 3. Download session assets from Firebase Storage
     # -------------------------------------------------------------------------
     base_path = f"users/{user_id}/sessions/{session_id}"
     logger.info(f"Downloading session assets from {base_path}")
@@ -78,29 +105,13 @@ def run_audit(user_id: str, session_id: str, run_id: str) -> dict[str, Any]:
     logger.info(f"Session assets ready: image={image_resized.size}, mask={mask_resized.size}")
 
     # -------------------------------------------------------------------------
-    # 3. Run parameter matrix
+    # 4. Run parameter matrix (swap transformer only, reuse everything else)
     # -------------------------------------------------------------------------
     results: list[dict[str, Any]] = []
 
     for quant_label, gguf_filename in QUANT_VARIANTS:
-        logger.info(f"Loading transformer: {quant_label} ({gguf_filename})")
-
-        # Download GGUF (fast if already cached, downloads if not)
-        local_gguf = hf_hub_download(repo_id=HF_REPO, filename=gguf_filename)
-
-        # Load transformer
-        transformer = FluxTransformer2DModel.from_single_file(
-            local_gguf,
-            quantization_config=GGUFQuantizationConfig(compute_dtype=torch.bfloat16),
-            torch_dtype=torch.bfloat16,
-        )
-
-        # Load pipeline
-        pipe = FluxFillPipeline.from_pretrained(
-            PIPELINE_PRETRAINED,
-            transformer=transformer,
-            torch_dtype=torch.bfloat16,
-        )
+        logger.info(f"Swapping transformer: {quant_label} ({gguf_filename})")
+        _swap_transformer(pipe, gguf_filename)
         pipe.enable_model_cpu_offload()
         logger.info(f"Pipeline ready for {quant_label}")
 
@@ -150,35 +161,21 @@ def run_audit(user_id: str, session_id: str, run_id: str) -> dict[str, Any]:
             })
 
         # VRAM cleanup after each quantization group
-        del transformer
-        del pipe
-        gc.collect()
-        torch.cuda.empty_cache()
         reserved = torch.cuda.memory_reserved(0) / 1e9
-        logger.info(f"VRAM after cleanup ({quant_label}): {reserved:.1f} GB reserved")
+        logger.info(f"VRAM after {quant_label}: {reserved:.1f} GB reserved")
 
     # -------------------------------------------------------------------------
-    # 4. torch.compile viability check (after matrix — don't pollute timing)
+    # 5. torch.compile viability check (reuse pipeline, swap back to Q4_0)
     # -------------------------------------------------------------------------
     logger.info("Running torch.compile viability check with Q4_0...")
-    local_gguf = hf_hub_download(repo_id=HF_REPO, filename="flux1-fill-dev-Q4_0.gguf")
-    transformer = FluxTransformer2DModel.from_single_file(
-        local_gguf,
-        quantization_config=GGUFQuantizationConfig(compute_dtype=torch.bfloat16),
-        torch_dtype=torch.bfloat16,
-    )
-    pipe_for_compile = FluxFillPipeline.from_pretrained(
-        PIPELINE_PRETRAINED,
-        transformer=transformer,
-        torch_dtype=torch.bfloat16,
-    )
-    pipe_for_compile.enable_model_cpu_offload()
+    _swap_transformer(pipe, "flux1-fill-dev-Q4_0.gguf")
+    pipe.enable_model_cpu_offload()
 
     dynamo.reset()
 
     def _test_forward():
         with torch.no_grad():
-            return pipe_for_compile(
+            return pipe(
                 prompt=REFERENCE_SESSION_PROMPT,
                 image=image_resized,
                 mask_image=mask_resized,
@@ -200,13 +197,15 @@ def run_audit(user_id: str, session_id: str, run_id: str) -> dict[str, Any]:
         f"torch.compile check: graphs={compile_graph_count}, breaks={compile_break_count}, viable={compile_viable}"
     )
 
-    del transformer
-    del pipe_for_compile
-    gc.collect()
-    torch.cuda.empty_cache()
+    # -------------------------------------------------------------------------
+    # 6. Restore Q4_0 transformer (startup default) for normal inpainting
+    # -------------------------------------------------------------------------
+    _swap_transformer(pipe, "flux1-fill-dev-Q4_0.gguf")
+    pipe.enable_model_cpu_offload()
+    logger.info("Startup pipeline restored with Q4_0 transformer")
 
     # -------------------------------------------------------------------------
-    # 5. Generate Markdown report
+    # 7. Generate Markdown report
     # -------------------------------------------------------------------------
     report_date = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
 
@@ -256,12 +255,7 @@ def run_audit(user_id: str, session_id: str, run_id: str) -> dict[str, Any]:
     logger.info(f"Audit report uploaded: {report_path}")
 
     # -------------------------------------------------------------------------
-    # 6. Reload startup pipeline so normal inpainting works again
-    # -------------------------------------------------------------------------
-    reload_startup_model()
-
-    # -------------------------------------------------------------------------
-    # 7. Return result dict
+    # 8. Return result dict
     # -------------------------------------------------------------------------
     return {
         "run_id": run_id,
