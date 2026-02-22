@@ -5,6 +5,14 @@ IMAGE="gcr.io/pawfect-edit/pawfect-edit-inpaint"
 REGION="us-east4"
 SERVICE="pawfect-edit-inpaint"
 
+# Usage: ./scripts/deploy.sh [--tiny]
+TINY_MODEL=0
+for arg in "$@"; do
+  case $arg in
+    --tiny) TINY_MODEL=1 ;;
+  esac
+done
+
 # Resolve HF_TOKEN: .env.local > environment > ~/.cache/huggingface/token
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ENV_FILE="$SCRIPT_DIR/../.env.local"
@@ -17,9 +25,14 @@ if [ -z "$HF_TOKEN" ]; then
   exit 1
 fi
 
+if [ "$TINY_MODEL" = "1" ]; then
+  echo "==> TINY MODEL mode (fast build, garbage output)"
+fi
+
 echo "==> Building linux/amd64 image..."
 docker buildx build --platform linux/amd64 \
   --build-arg HF_TOKEN="$HF_TOKEN" \
+  --build-arg TINY_MODEL="$TINY_MODEL" \
   -t "$IMAGE" \
   --load \
   .
@@ -37,6 +50,7 @@ gcloud run deploy "$SERVICE" \
   --cpu=8 --memory=32Gi \
   --max-instances=1 --min-instances=0 --concurrency=1 \
   --timeout=3600 \
+  --set-env-vars=TINY_MODEL="$TINY_MODEL" \
   --set-secrets=FIREBASE_CREDENTIALS=FIREBASE_CREDENTIALS:latest,HF_TOKEN=HF_TOKEN:latest \
   --startup-probe=httpGet.path=/ready,initialDelaySeconds=10,periodSeconds=10,failureThreshold=60,timeoutSeconds=5 \
   --liveness-probe=httpGet.path=/health

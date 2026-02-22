@@ -1,5 +1,6 @@
 import gc
 import logging
+import os
 
 import torch
 from diffusers import FluxFillPipeline, FluxTransformer2DModel, GGUFQuantizationConfig
@@ -13,12 +14,23 @@ PROMPT = "empty ground, nothing here, just the natural ground surface continuing
 NUM_STEPS = 28
 GUIDANCE_SCALE = 10
 
+# Toggle via environment variable: set TINY_MODEL=1 for fast deploys/testing
+TINY_MODEL = os.environ.get("TINY_MODEL", "0") == "1"
+TINY_MODEL_ID = "katuni4ka/tiny-random-flux-fill"
+
 GGUF_URL = "https://huggingface.co/YarvixPA/FLUX.1-Fill-dev-GGUF/blob/main/flux1-fill-dev-Q4_0.gguf"
 
 
 def load_model():
-    """Load FLUX.1-Fill-dev pipeline with Q4 GGUF quantized transformer."""
+    """Load FLUX.1-Fill-dev pipeline (or tiny test model if TINY_MODEL=1)."""
     global _pipe
+
+    if TINY_MODEL:
+        logger.info(f"Loading TINY test model: {TINY_MODEL_ID}")
+        _pipe = FluxFillPipeline.from_pretrained(TINY_MODEL_ID, torch_dtype=torch.bfloat16)
+        _pipe.to("cuda" if torch.cuda.is_available() else "cpu")
+        logger.info("Tiny model ready")
+        return
 
     logger.info("Loading GGUF Q4 transformer...")
     transformer = FluxTransformer2DModel.from_single_file(

@@ -11,13 +11,14 @@ from diffusers import FluxTransformer2DModel, GGUFQuantizationConfig
 from huggingface_hub import hf_hub_download
 
 from app.services import firebase
-from app.services.flux_inpaint import get_pipeline, load_model as reload_startup_model
+from app.services.flux_inpaint import TINY_MODEL, get_pipeline, load_model as reload_startup_model
 from app.utils.image import decode_image, decode_mask, resize_for_flux
 
 logger = logging.getLogger(__name__)
 
 REFERENCE_SESSION_PROMPT = "empty ground, nothing here, just the natural ground surface continuing seamlessly"
 NUM_STEPS = 28  # held constant for quant and guidance tests
+TINY_NUM_STEPS = 2  # minimal steps for tiny model testing
 
 # Quantization variants: (label, HF filename)
 # Q5_K_M does not exist in YarvixPA repo — use Q5_K_S (8.29 GB)
@@ -66,44 +67,10 @@ def _swap_transformer(pipe, gguf_filename: str):
     return pipe
 
 
-def run_audit(user_id: str, session_id: str, run_id: str) -> dict[str, Any]:
-    """
-    Run the full baseline audit parameter matrix.
+def _run_audit_tiny(pipe, user_id, session_id, run_id, gpu_name, sm, total_vram_gb):
+    """Run audit with the tiny test model — single pass, no quant swaps."""
+    logger.info("TINY_MODEL mode: running single-pass audit (no quant variants)")
 
-    Outer loop: 3 quantization variants (Q4_0, Q5_K_S, Q8_0)
-    Inner loop: 5 guidance scale values (2, 4, 10, 20, 30)
-    Total: 15 inferences + 1 torch.compile viability check.
-
-    Reuses the startup pipeline's shared components (text encoders, VAE, scheduler)
-    and only swaps the transformer for each quant variant to stay within memory limits.
-
-    All outputs uploaded to Firebase Storage under audit/{run_id}/.
-    Returns a dict with run_id, gpu info, results list, compile viability, and report URL.
-    """
-    # -------------------------------------------------------------------------
-    # 1. Confirm GPU identity
-    # -------------------------------------------------------------------------
-    gpu_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
-    if torch.cuda.is_available():
-        major, minor = torch.cuda.get_device_capability(0)
-        sm = f"sm_{major}{minor}"
-        total_vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
-    else:
-        sm = "N/A"
-        total_vram_gb = 0.0
-    logger.info(f"GPU: {gpu_name}, compute capability: {sm}, VRAM: {total_vram_gb:.1f} GB")
-
-    # -------------------------------------------------------------------------
-    # 2. Get the existing pipeline (reuse text encoders, VAE, scheduler)
-    # -------------------------------------------------------------------------
-    pipe = get_pipeline()
-    if pipe is None:
-        raise RuntimeError("Startup pipeline not loaded — cannot run audit")
-    logger.info("Reusing startup pipeline components for audit")
-
-    # -------------------------------------------------------------------------
-    # 3. Download session assets from Firebase Storage
-    # -------------------------------------------------------------------------
     base_path = f"users/{user_id}/sessions/{session_id}"
     logger.info(f"Downloading session assets from {base_path}")
     image_bytes = firebase.download_blob(f"{base_path}/original.jpg")
@@ -115,9 +82,74 @@ def run_audit(user_id: str, session_id: str, run_id: str) -> dict[str, Any]:
     mask_resized = resize_for_flux(mask_orig)
     logger.info(f"Session assets ready: image={image_resized.size}, mask={mask_resized.size}")
 
-    # -------------------------------------------------------------------------
-    # 4. Run parameter matrix (swap transformer only, reuse everything else)
-    # -------------------------------------------------------------------------
+    results: list[dict[str, Any]] = []
+    steps = TINY_NUM_STEPS
+
+    for gs in GUIDANCE_SCALE_GRID:
+        logger.info(f"Running inference: tiny, guidance_scale={gs}")
+        start_wall = time.time()
+
+        result_pipe = pipe(
+            prompt=REFERENCE_SESSION_PROMPT,
+            image=image_resized,
+            mask_image=mask_resized,
+            num_inference_steps=steps,
+            guidance_scale=gs,
+            height=image_resized.size[1],
+            width=image_resized.size[0],
+        )
+
+        wall_s = time.time() - start_wall
+        logger.info(f"Inference done: tiny gs={gs}, wall={wall_s:.1f}s")
+
+        img = result_pipe.images[0]
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        img_bytes = buf.getvalue()
+
+        storage_path = f"audit/{run_id}/tiny_gs{gs:.0f}.png"
+        firebase.upload_blob(storage_path, img_bytes, "image/png")
+        url = firebase.generate_signed_url(storage_path)
+
+        results.append({
+            "quant": "tiny",
+            "guidance": gs,
+            "steps": steps,
+            "wall_s": wall_s,
+            "gpu_ms": wall_s * 1000,
+            "image_path": storage_path,
+            "signed_url": url,
+        })
+
+    # Skip torch.compile check for tiny model
+    compile_graph_count = 0
+    compile_break_count = 0
+    compile_break_reasons = []
+    compile_viable = True
+    compile_recommendation = "Skipped — tiny test model"
+
+    return results, {
+        "compile_graph_count": compile_graph_count,
+        "compile_break_count": compile_break_count,
+        "compile_break_reasons": compile_break_reasons,
+        "compile_viable": compile_viable,
+        "compile_recommendation": compile_recommendation,
+    }
+
+
+def _run_audit_full(pipe, user_id, session_id, run_id, gpu_name, sm, total_vram_gb):
+    """Run full audit with quant variant swaps."""
+    base_path = f"users/{user_id}/sessions/{session_id}"
+    logger.info(f"Downloading session assets from {base_path}")
+    image_bytes = firebase.download_blob(f"{base_path}/original.jpg")
+    mask_bytes = firebase.download_blob(f"{base_path}/mask_auto.png")
+
+    image_orig = decode_image(image_bytes)
+    mask_orig = decode_mask(mask_bytes)
+    image_resized = resize_for_flux(image_orig)
+    mask_resized = resize_for_flux(mask_orig)
+    logger.info(f"Session assets ready: image={image_resized.size}, mask={mask_resized.size}")
+
     results: list[dict[str, Any]] = []
 
     for quant_label, gguf_filename in QUANT_VARIANTS:
@@ -130,7 +162,6 @@ def run_audit(user_id: str, session_id: str, run_id: str) -> dict[str, Any]:
             vram_before = torch.cuda.memory_allocated(0) / 1e9
             logger.info(f"Running inference: {quant_label}, guidance_scale={gs}, VRAM allocated: {vram_before:.1f} GB")
 
-            # Dual timing: wall-clock + CUDA events
             start_wall = time.time()
             start_evt = torch.cuda.Event(enable_timing=True)
             end_evt = torch.cuda.Event(enable_timing=True)
@@ -152,13 +183,11 @@ def run_audit(user_id: str, session_id: str, run_id: str) -> dict[str, Any]:
             vram_after = torch.cuda.memory_allocated(0) / 1e9
             logger.info(f"Inference done: {quant_label} gs={gs}, wall={wall_s:.1f}s, gpu={gpu_ms:.0f}ms, VRAM: {vram_after:.1f} GB")
 
-            # Save image to PNG bytes
             img = result_pipe.images[0]
             buf = io.BytesIO()
             img.save(buf, format="PNG")
             img_bytes = buf.getvalue()
 
-            # Upload to Firebase Storage
             storage_path = f"audit/{run_id}/{quant_label}_gs{gs:.0f}.png"
             firebase.upload_blob(storage_path, img_bytes, "image/png")
             url = firebase.generate_signed_url(storage_path)
@@ -173,13 +202,10 @@ def run_audit(user_id: str, session_id: str, run_id: str) -> dict[str, Any]:
                 "signed_url": url,
             })
 
-        # VRAM cleanup after each quantization group
         reserved = torch.cuda.memory_reserved(0) / 1e9
         logger.info(f"VRAM after {quant_label}: {reserved:.1f} GB reserved")
 
-    # -------------------------------------------------------------------------
-    # 5. torch.compile viability check (reuse pipeline, swap back to Q4_0)
-    # -------------------------------------------------------------------------
+    # torch.compile viability check
     logger.info("Running torch.compile viability check with Q4_0...")
     _swap_transformer(pipe, "flux1-fill-dev-Q4_0.gguf")
     pipe.enable_sequential_cpu_offload()
@@ -192,14 +218,14 @@ def run_audit(user_id: str, session_id: str, run_id: str) -> dict[str, Any]:
                 prompt=REFERENCE_SESSION_PROMPT,
                 image=image_resized,
                 mask_image=mask_resized,
-                num_inference_steps=1,  # minimal — just to trace
+                num_inference_steps=1,
                 guidance_scale=4.0,
             )
 
     explanation = dynamo.explain(_test_forward)()
     compile_graph_count = explanation.graph_count
     compile_break_count = explanation.graph_break_count
-    compile_break_reasons = [str(r) for r in explanation.break_reasons[:5]]  # cap at 5
+    compile_break_reasons = [str(r) for r in explanation.break_reasons[:5]]
     compile_viable = compile_break_count == 0
     compile_recommendation = (
         "Proceed with torch.compile in Phase 4 — zero graph breaks detected"
@@ -210,19 +236,61 @@ def run_audit(user_id: str, session_id: str, run_id: str) -> dict[str, Any]:
         f"torch.compile check: graphs={compile_graph_count}, breaks={compile_break_count}, viable={compile_viable}"
     )
 
-    # -------------------------------------------------------------------------
-    # 6. Restore Q4_0 transformer (startup default) for normal inpainting
-    # -------------------------------------------------------------------------
+    # Restore Q4_0 for normal inpainting
     _swap_transformer(pipe, "flux1-fill-dev-Q4_0.gguf")
     pipe.enable_sequential_cpu_offload()
     logger.info("Startup pipeline restored with Q4_0 transformer")
 
+    return results, {
+        "compile_graph_count": compile_graph_count,
+        "compile_break_count": compile_break_count,
+        "compile_break_reasons": compile_break_reasons,
+        "compile_viable": compile_viable,
+        "compile_recommendation": compile_recommendation,
+    }
+
+
+def run_audit(user_id: str, session_id: str, run_id: str) -> dict[str, Any]:
+    """
+    Run the full baseline audit parameter matrix.
+
+    In TINY_MODEL mode: single pass with guidance scale grid only (no quant variants).
+    In full mode: 3 quant variants × 5 guidance scales = 15 inferences + torch.compile check.
+    """
     # -------------------------------------------------------------------------
-    # 7. Generate Markdown report
+    # 1. Confirm GPU identity
+    # -------------------------------------------------------------------------
+    gpu_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
+    if torch.cuda.is_available():
+        major, minor = torch.cuda.get_device_capability(0)
+        sm = f"sm_{major}{minor}"
+        total_vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
+    else:
+        sm = "N/A"
+        total_vram_gb = 0.0
+    logger.info(f"GPU: {gpu_name}, compute capability: {sm}, VRAM: {total_vram_gb:.1f} GB")
+
+    # -------------------------------------------------------------------------
+    # 2. Get the existing pipeline
+    # -------------------------------------------------------------------------
+    pipe = get_pipeline()
+    if pipe is None:
+        raise RuntimeError("Startup pipeline not loaded — cannot run audit")
+    logger.info(f"Reusing startup pipeline for audit (tiny_model={TINY_MODEL})")
+
+    # -------------------------------------------------------------------------
+    # 3. Run audit (tiny or full)
+    # -------------------------------------------------------------------------
+    if TINY_MODEL:
+        results, compile_info = _run_audit_tiny(pipe, user_id, session_id, run_id, gpu_name, sm, total_vram_gb)
+    else:
+        results, compile_info = _run_audit_full(pipe, user_id, session_id, run_id, gpu_name, sm, total_vram_gb)
+
+    # -------------------------------------------------------------------------
+    # 4. Generate Markdown report
     # -------------------------------------------------------------------------
     report_date = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
 
-    # Build results table rows
     table_rows = []
     for r in results:
         row = (
@@ -233,10 +301,11 @@ def run_audit(user_id: str, session_id: str, run_id: str) -> dict[str, Any]:
         table_rows.append(row)
     table_body = "\n".join(table_rows)
 
-    break_reasons_str = ", ".join(compile_break_reasons) if compile_break_reasons else "None"
+    break_reasons_str = ", ".join(compile_info["compile_break_reasons"]) if compile_info["compile_break_reasons"] else "None"
 
     report_md = f"""# Baseline Audit Report — {run_id}
 **Session:** {session_id} | **Date:** {report_date} | **GPU:** {gpu_name} ({sm})
+**Mode:** {"TINY TEST MODEL" if TINY_MODEL else "Full GGUF variants"}
 
 ## GPU Info
 - Device: {gpu_name}
@@ -250,10 +319,10 @@ def run_audit(user_id: str, session_id: str, run_id: str) -> dict[str, Any]:
 {table_body}
 
 ## torch.compile Viability
-- Graph breaks detected: {compile_break_count}
-- Graph count: {compile_graph_count}
+- Graph breaks detected: {compile_info["compile_break_count"]}
+- Graph count: {compile_info["compile_graph_count"]}
 - Break reasons: {break_reasons_str}
-- Recommendation: {compile_recommendation}
+- Recommendation: {compile_info["compile_recommendation"]}
 
 ## Recommended Settings for Phase 1
 *(Review images above and fill in)*
@@ -268,14 +337,14 @@ def run_audit(user_id: str, session_id: str, run_id: str) -> dict[str, Any]:
     logger.info(f"Audit report uploaded: {report_path}")
 
     # -------------------------------------------------------------------------
-    # 8. Return result dict
+    # 5. Return result dict
     # -------------------------------------------------------------------------
     return {
         "run_id": run_id,
         "gpu": gpu_name,
         "sm": sm,
         "results": results,
-        "compile_viable": compile_viable,
+        "compile_viable": compile_info["compile_viable"],
         "report_url": report_signed_url,
         "report_path": report_path,
     }
