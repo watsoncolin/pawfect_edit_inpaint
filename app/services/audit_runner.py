@@ -112,11 +112,12 @@ def run_audit(user_id: str, session_id: str, run_id: str) -> dict[str, Any]:
     for quant_label, gguf_filename in QUANT_VARIANTS:
         logger.info(f"Swapping transformer: {quant_label} ({gguf_filename})")
         _swap_transformer(pipe, gguf_filename)
-        pipe.enable_model_cpu_offload()
+        pipe.enable_sequential_cpu_offload()
         logger.info(f"Pipeline ready for {quant_label}")
 
         for gs in GUIDANCE_SCALE_GRID:
-            logger.info(f"Running inference: {quant_label}, guidance_scale={gs}")
+            vram_before = torch.cuda.memory_allocated(0) / 1e9
+            logger.info(f"Running inference: {quant_label}, guidance_scale={gs}, VRAM allocated: {vram_before:.1f} GB")
 
             # Dual timing: wall-clock + CUDA events
             start_wall = time.time()
@@ -137,7 +138,8 @@ def run_audit(user_id: str, session_id: str, run_id: str) -> dict[str, Any]:
             wall_s = time.time() - start_wall
             gpu_ms = start_evt.elapsed_time(end_evt)
 
-            logger.info(f"Inference done: {quant_label} gs={gs}, wall={wall_s:.1f}s, gpu={gpu_ms:.0f}ms")
+            vram_after = torch.cuda.memory_allocated(0) / 1e9
+            logger.info(f"Inference done: {quant_label} gs={gs}, wall={wall_s:.1f}s, gpu={gpu_ms:.0f}ms, VRAM: {vram_after:.1f} GB")
 
             # Save image to PNG bytes
             img = result_pipe.images[0]
@@ -169,7 +171,7 @@ def run_audit(user_id: str, session_id: str, run_id: str) -> dict[str, Any]:
     # -------------------------------------------------------------------------
     logger.info("Running torch.compile viability check with Q4_0...")
     _swap_transformer(pipe, "flux1-fill-dev-Q4_0.gguf")
-    pipe.enable_model_cpu_offload()
+    pipe.enable_sequential_cpu_offload()
 
     dynamo.reset()
 
@@ -201,7 +203,7 @@ def run_audit(user_id: str, session_id: str, run_id: str) -> dict[str, Any]:
     # 6. Restore Q4_0 transformer (startup default) for normal inpainting
     # -------------------------------------------------------------------------
     _swap_transformer(pipe, "flux1-fill-dev-Q4_0.gguf")
-    pipe.enable_model_cpu_offload()
+    pipe.enable_sequential_cpu_offload()
     logger.info("Startup pipeline restored with Q4_0 transformer")
 
     # -------------------------------------------------------------------------
