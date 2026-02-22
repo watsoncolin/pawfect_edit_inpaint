@@ -1,4 +1,5 @@
 import base64
+import datetime
 import json
 import logging
 import os
@@ -64,3 +65,21 @@ def update_session(user_id: str, session_id: str, updates: dict):
     doc_ref = db.collection("users").document(user_id).collection("sessions").document(session_id)
     doc_ref.update(updates)
     logger.info(f"Updated Firestore session {session_id}: {list(updates.keys())}")
+
+
+def generate_signed_url(path: str, expiry_hours: int = 72) -> str:
+    """Generate a V4 signed URL for a Firebase Storage blob."""
+    bucket = get_storage_bucket()
+    blob = bucket.blob(path)
+    url = blob.generate_signed_url(
+        version="v4",
+        expiration=datetime.timedelta(hours=expiry_hours),
+        method="GET",
+    )
+    return url
+
+
+def upload_and_sign(path: str, data: bytes, content_type: str, expiry_hours: int = 72) -> str:
+    """Upload bytes to Firebase Storage and return a signed URL."""
+    upload_blob(path, data, content_type)
+    return generate_signed_url(path, expiry_hours)

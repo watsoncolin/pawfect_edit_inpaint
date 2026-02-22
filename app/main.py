@@ -47,3 +47,7 @@ async def ready():
 from app.routers.inpaint import router as inpaint_router  # noqa: E402
 
 app.include_router(inpaint_router)
+
+from app.routers.audit import router as audit_router  # noqa: E402
+
+app.include_router(audit_router)
